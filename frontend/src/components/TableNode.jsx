@@ -1,5 +1,5 @@
 import { Handle, Position } from '@xyflow/react'
-import { Key, Plus, Trash2, Database, Edit2 } from 'lucide-react'
+import { Key, Plus, Trash2, Database, Edit2, Bookmark } from 'lucide-react'
 import { memo } from 'react'
 
 /**
@@ -10,15 +10,24 @@ import { memo } from 'react'
  * - Actions overlay (Add field)
  */
 const TableNode = ({ data }) => {
-  const { table, onAddColumn, onDropTable, onDropColumn, onModifyColumn } = data
+  const { table, onAddColumn, onDropTable, onDropColumn, onModifyColumn, isIndex } = data
 
   return (
-    <div className="bg-surface-900 border-2 border-surface-700/60 rounded-xl shadow-2xl min-w-[220px] overflow-hidden group/node animate-fade-in-scale">
+    <div className={`rounded-xl shadow-2xl min-w-[220px] overflow-hidden group/node animate-fade-in-scale border-2 transition-all duration-500
+      ${isIndex 
+          ? 'bg-indigo-950/40 border-indigo-500/60 ring-4 ring-indigo-500/10' 
+          : 'bg-surface-900 border-surface-700/60'}`}
+    >
       {/* Header */}
-      <div className="bg-surface-800/80 px-3 py-2.5 border-b border-surface-700/60 flex items-center justify-between gap-2">
+      <div className={`${isIndex ? 'bg-indigo-500/20' : 'bg-surface-800/80'} px-3 py-2.5 border-b border-surface-700/60 flex items-center justify-between gap-2`}>
         <div className="flex items-center gap-2 overflow-hidden">
-          <Database className="w-4 h-4 text-primary-400 shrink-0" />
-          <span className="text-xs font-bold text-white truncate">{table.name}</span>
+          {isIndex ? (
+              <Bookmark className="w-4 h-4 text-indigo-400 shrink-0 fill-indigo-400/20" />
+          ) : (
+              <Database className="w-4 h-4 text-primary-400 shrink-0" />
+          )}
+          <span className={`text-xs font-bold truncate ${isIndex ? 'text-indigo-100' : 'text-white'}`}>{table.name}</span>
+          {isIndex && <span className="bg-indigo-500/30 text-indigo-200 text-[8px] px-1 rounded font-bold tracking-tighter">INDEX</span>}
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover/node:opacity-100 transition-opacity">
           <button

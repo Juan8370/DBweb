@@ -30,16 +30,17 @@ _DANGEROUS_PATTERN = re.compile(
 )
 
 
-def _enforce_safe_mode(request: Request, sql: str) -> None:
+def _enforce_safe_mode(request: Request, sql: str, allow_in_body: bool = False) -> None:
     """Raise 403 if destructive SQL is detected without explicit opt-in."""
     if _DANGEROUS_PATTERN.search(sql):
-        allow = request.headers.get("X-Allow-Destructive", "false")
-        if allow.lower() != "true":
+        allow_header = request.headers.get("X-Allow-Destructive", "false").lower() == "true"
+        if not (allow_header or allow_in_body):
             raise HTTPException(
                 status_code=403,
                 detail=(
                     "Destructive query blocked by Safe Mode. "
-                    "Send header 'X-Allow-Destructive: true' to proceed."
+                    "Confirm with 'allow_destructive: true' in the request body "
+                    "or send header 'X-Allow-Destructive: true' to proceed."
                 ),
             )
 
@@ -53,7 +54,7 @@ async def execute_query(req: QueryRequest, request: Request):
     if not entry:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    _enforce_safe_mode(request, req.sql)
+    _enforce_safe_mode(request, req.sql, allow_in_body=req.allow_destructive)
 
     t0 = time.perf_counter()
     try:
@@ -176,7 +177,7 @@ async def update_cell(req: CellUpdateRequest, request: Request):
     pkq = dialect.quote(req.primary_key_column)
 
     sql = f'UPDATE {table_ref} SET {colq} = :val WHERE {pkq} = :pk'
-    _enforce_safe_mode(request, sql)
+    _enforce_safe_mode(request, sql, allow_in_body=req.allow_destructive)
 
     try:
         with entry.engine.connect() as conn:

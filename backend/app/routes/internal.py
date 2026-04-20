@@ -2,7 +2,10 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from ..internal_db import get_db, Snippet, Document, NodePosition
-from ..schemas import SnippetSchema, DocumentSchema, SaveSnippetRequest, SaveDocumentRequest, NodePositionSchema, SaveNodePositionsRequest
+from ..schemas import (
+    SnippetSchema, DocumentSchema, SaveSnippetRequest, SaveDocumentRequest, 
+    NodePositionSchema, SaveNodePositionsRequest, TableMetadataSchema, SaveTableMetadataRequest
+)
 
 router = APIRouter(prefix="/api/internal", tags=["Internal"])
 
@@ -159,3 +162,47 @@ def save_positions(req: SaveNodePositionsRequest, db: Session = Depends(get_db))
     
     db.commit()
     return {"message": "Positions saved"}
+
+# --- Table Metadata ---
+
+@router.get("/metadata", response_model=List[TableMetadataSchema])
+def list_metadata(
+    db_type: Optional[str] = Query(None),
+    host: Optional[str] = Query(None),
+    db_name: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
+):
+    from ..internal_db import TableMetadata
+    query = db.query(TableMetadata)
+    if db_type is not None: query = query.filter(TableMetadata.db_type == db_type)
+    if host is not None: query = query.filter(TableMetadata.host == host)
+    if db_name is not None: query = query.filter(TableMetadata.db_name == db_name)
+    
+    return query.all()
+
+@router.post("/metadata")
+def save_metadata(req: SaveTableMetadataRequest, db: Session = Depends(get_db)):
+    from ..internal_db import TableMetadata
+    
+    # Check if exists
+    meta = db.query(TableMetadata).filter(
+        TableMetadata.table_name == req.table_name,
+        TableMetadata.db_type == req.db_type,
+        TableMetadata.host == req.host,
+        TableMetadata.db_name == req.db_name
+    ).first()
+    
+    if meta:
+        meta.is_index = req.is_index
+    else:
+        meta = TableMetadata(
+            table_name=req.table_name,
+            is_index=req.is_index,
+            db_type=req.db_type,
+            host=req.host,
+            db_name=req.db_name
+        )
+        db.add(meta)
+    
+    db.commit()
+    return {"message": "Metadata saved"}

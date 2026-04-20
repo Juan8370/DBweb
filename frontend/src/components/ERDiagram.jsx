@@ -16,7 +16,7 @@ import dagre from '@dagrejs/dagre'
 import TableNode from './TableNode'
 import ContextMenu from './ContextMenu'
 import CardinalityEdge from './CardinalityEdge'
-import { Plus, Maximize, Layout as LayoutIcon, RefreshCcw, PenLine, Trash2, GitBranch, Eye, XCircle, Database, Loader2, Save } from 'lucide-react'
+import { Plus, Maximize, Layout as LayoutIcon, RefreshCcw, PenLine, Trash2, GitBranch, Eye, EyeOff, Bookmark, XCircle, Database, Loader2, Save } from 'lucide-react'
 import '@xyflow/react/dist/style.css'
 
 const nodeTypes = { tableNode: TableNode }
@@ -25,7 +25,7 @@ const edgeTypes = { cardinality: CardinalityEdge }
 // ---------------------------------------------------------------------------
 // Layout with dagre
 // ---------------------------------------------------------------------------
-function layoutElements(nodes, edges) {
+function layoutElements(nodes, edges, direction = 'LR') {
   // 1. Identify connected vs floating nodes
   const connectedNodeIds = new Set()
   edges.forEach((edge) => {
@@ -57,7 +57,7 @@ function layoutElements(nodes, edges) {
   // 3. Layout connected nodes with Dagre
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: 'LR', nodesep: 200, ranksep: 320, marginx: 80, marginy: 80 })
+  g.setGraph({ rankdir: direction, nodesep: 200, ranksep: 320, marginx: 80, marginy: 80 })
 
   connectedNodes.forEach((node) => {
     const h = node.data.table.columns.length * 36 + 60
@@ -84,7 +84,7 @@ function layoutElements(nodes, edges) {
 // ---------------------------------------------------------------------------
 // Schema → React Flow conversion
 // ---------------------------------------------------------------------------
-function schemaToFlow(schema, callbacks) {
+function schemaToFlow(schema, callbacks, direction = 'LR', metadata = []) {
   if (!schema) return { nodes: [], edges: [] }
 
   const nodes = schema.tables.map((t) => ({
@@ -93,6 +93,7 @@ function schemaToFlow(schema, callbacks) {
     position: { x: 0, y: 0 },
     data: {
       table: t,
+      isIndex: metadata.find(m => m.table_name === t.name)?.is_index || false,
       ...callbacks
     },
   }))
@@ -115,7 +116,10 @@ function schemaToFlow(schema, callbacks) {
     },
   }))
 
-  return layoutElements(nodes, edges)
+  if (callbacks?.shouldLayout) {
+    return layoutElements(nodes, edges, direction)
+  }
+  return { nodes, edges }
 }
 
 // ---------------------------------------------------------------------------
@@ -132,13 +136,17 @@ const ERDiagramInner = memo(({
     onDropColumn,
     onModifyColumn,
     onRenameTable,
-    apiHandlers
+    apiHandlers,
+    metadata = [],
+    onSaveMetadata
 }) => {
   const [searchTerm, setSearchTerm] = useState('')
   const [hiddenTables, setHiddenTables] = useState(new Set())
   const { setCenter, fitView } = useReactFlow()
   const [dbPositions, setDbPositions] = useState({})
   const [hasInitialPositionLoaded, setHasInitialPositionLoaded] = useState(false)
+  const [layoutDirection, setLayoutDirection] = useState('LR') // 'LR' or 'TB'
+  const initialFitRef = useRef(null) // Stores database name for which fit was done
 
   // Fetch saved positions from backend on mount or context change
   useEffect(() => {
@@ -171,13 +179,14 @@ const ERDiagramInner = memo(({
     onDropTable: (t) => recordActionRef.current?.('DROP_TABLE', { table: t }),
     onDropColumn: (c, t) => recordActionRef.current?.('DROP_COLUMN', { column: c, table: t }),
     onModifyColumn: (c, t, ci) => onModifyColumn?.(c, t, ci),
-    onRenameTable: (t) => onRenameTable?.(t)
-  }), [onAddColumn, onRenameTable, onModifyColumn])
+    onRenameTable: (t) => onRenameTable?.(t),
+    onSaveMetadata: (n, val) => onSaveMetadata?.({ tableName: n, isIndex: val })
+  }), [onAddColumn, onRenameTable, onModifyColumn, onSaveMetadata])
 
-  const { nodes: allNodes, edges: allEdges } = useMemo(
-    () => schemaToFlow(schema, callbacks),
-    [schema, callbacks],
-  )
+  const { nodes: allNodes, edges: allEdges } = useMemo(() => {
+    const shouldLayout = initialFitRef.current !== schema?.database
+    return schemaToFlow(schema, { ...callbacks, shouldLayout }, layoutDirection, metadata)
+  }, [schema, callbacks, layoutDirection, metadata])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(allNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(allEdges)
@@ -189,6 +198,18 @@ const ERDiagramInner = memo(({
   const edgesRef = useRef(edges)
   useEffect(() => { nodesRef.current = nodes }, [nodes])
   useEffect(() => { edgesRef.current = edges }, [edges])
+
+  const handleLayoutToggle = useCallback((dir) => {
+    setLayoutDirection(dir)
+    // Force immediate recalculation using current graph state
+    const { nodes: ln, edges: le } = layoutElements(nodes, edges, dir)
+    setNodes(ln)
+    setEdges(le)
+    // Slight delay to allow React Flow to process the new positions before fitting
+    setTimeout(() => {
+        fitView({ duration: 800, padding: 0.2 })
+    }, 50)
+  }, [nodes, edges, setNodes, setEdges, fitView])
 
   // --- Actions ---
   const [isSaving, setIsSaving] = useState(false)
@@ -280,15 +301,16 @@ const ERDiagramInner = memo(({
   useEffect(() => { recordActionRef.current = recordAction }, [recordAction])
 
 
-  // Auto-fit Logic
+  // Auto-fit Logic: ONLY on first load per database
   useEffect(() => {
-    if (nodesRef.current.length > 0) {
+    if (hasInitialPositionLoaded && nodes.length > 0 && initialFitRef.current !== schema?.database) {
         const timer = setTimeout(() => {
             fitView({ duration: 800, padding: 0.2 })
-        }, 100)
+            initialFitRef.current = schema?.database
+        }, 300)
         return () => clearTimeout(timer)
     }
-  }, [allNodes.length, fitView])
+  }, [hasInitialPositionLoaded, nodes.length, fitView, schema?.database])
 
   const onConnect = useCallback((params) => {
     const sourceCol = params.sourceHandle.replace('-source', '')
@@ -381,7 +403,8 @@ const ERDiagramInner = memo(({
   }, [])
 
   const flyToTable = useCallback((tableName) => {
-    const node = allNodes.find(n => n.id === tableName)
+    // Search in current nodes state to get the real, live position
+    const node = nodes.find(n => n.id === tableName)
     if (!node) return
     
     if (hiddenTables.has(tableName)) {
@@ -393,7 +416,7 @@ const ERDiagramInner = memo(({
     }
 
     setCenter(node.position.x + 120, node.position.y + 50, { zoom: 0.8, duration: 800 })
-  }, [allNodes, hiddenTables, setCenter])
+  }, [nodes, hiddenTables, setCenter])
 
   const toggleTableVisibility = (tableName) => {
     setHiddenTables(prev => {
@@ -415,6 +438,12 @@ const ERDiagramInner = memo(({
         const items = [
             { label: 'Add Column', icon: Plus, onClick: () => onAddColumn?.(table) },
             { label: 'Rename Table', icon: PenLine, onClick: () => onRenameTable?.(table) },
+            { label: 'Hide Table', icon: EyeOff, onClick: () => toggleTableVisibility(table.name) },
+            { 
+                label: contextMenu.node.data.isIndex ? 'Unmark as Index' : 'Mark as Index', 
+                icon: Bookmark, 
+                onClick: () => onSaveMetadata?.({ tableName: table.name, isIndex: !contextMenu.node.data.isIndex }) 
+            },
             { divider: true },
             { label: 'Manage Relations', icon: GitBranch, onClick: () => alert('Drag from a column handle to create relationships!') },
             { divider: true },
@@ -505,7 +534,7 @@ const ERDiagramInner = memo(({
     const paneActions = [
         { label: 'Add Table Here', icon: Plus, onClick: () => onCreateTable?.() },
         { label: 'Auto-Layout', icon: LayoutIcon, onClick: () => {
-            const { nodes: ln, edges: le } = layoutElements(nodes, edges)
+            const { nodes: ln, edges: le } = layoutElements(nodes, edges, layoutDirection)
             setNodes(ln)
             setEdges(le)
         }},
@@ -610,7 +639,8 @@ const ERDiagramInner = memo(({
                     >
                         <div 
                             className="flex items-center gap-2 flex-1 min-w-0"
-                            onClick={() => flyToTable(table.name)}
+                            onDoubleClick={() => flyToTable(table.name)}
+                            title="Double-click to center in diagram"
                         >
                             <Database className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-primary-300' : 'text-primary-400'}`} />
                             <span className={`text-[11px] truncate font-semibold ${isSelected ? 'text-white' : 'text-surface-200'}`}>{table.name}</span>
@@ -677,14 +707,29 @@ const ERDiagramInner = memo(({
 
         {/* Floating Toolbar & Status Bar */}
         <div className="absolute top-4 right-4 flex flex-col items-end gap-3 z-20">
-            <div className="flex gap-2">
-                <button 
-                className="btn bg-surface-900 border border-surface-700/60 shadow-xl hover:bg-surface-800 text-xs px-3 py-2 text-white flex items-center gap-2 transition-all"
-                onClick={() => onCreateTable?.()}
-                >
-                    <Plus className="w-4 h-4 text-primary-400" />
+            <div className="flex gap-2 p-1 bg-surface-900 border border-surface-700/60 rounded-xl shadow-xl">
+                 <button 
+                  onClick={() => handleLayoutToggle('LR')}
+                  title="Horizontal Layout"
+                  className={`p-2 rounded-lg transition-all ${layoutDirection === 'LR' ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/20' : 'text-surface-400 hover:text-white hover:bg-surface-800'}`}
+                 >
+                    <LayoutIcon className="w-4 h-4 rotate-0" />
+                 </button>
+                 <button 
+                  onClick={() => handleLayoutToggle('TB')}
+                  title="Vertical Layout"
+                  className={`p-2 rounded-lg transition-all ${layoutDirection === 'TB' ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/20' : 'text-surface-400 hover:text-white hover:bg-surface-800'}`}
+                 >
+                    <LayoutIcon className="w-4 h-4 -rotate-90" />
+                 </button>
+                 <div className="w-px h-6 bg-surface-800 self-center mx-1" />
+                 <button 
+                  className="btn-primary text-[10px] px-3 h-8"
+                  onClick={() => onCreateTable?.()}
+                 >
+                    <Plus className="w-3.5 h-3.5" />
                     New Table
-                </button>
+                 </button>
             </div>
 
             {saveError && (

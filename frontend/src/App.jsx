@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { Plus } from 'lucide-react'
 import { useDatabase } from './hooks/useDatabase'
 import ConnectionForm from './components/ConnectionForm'
@@ -8,6 +8,7 @@ import DataTable from './components/DataTable'
 import Terminal from './components/Terminal'
 import QueryBuilder from './components/QueryBuilder'
 import Documentation from './components/Documentation'
+import { getNodePositions, saveNodePositions } from './lib/snippets'
 
 // Modals
 import CreateTableModal from './components/modals/CreateTableModal'
@@ -60,6 +61,15 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('dbweb_theme', theme)
   }, [theme])
+
+  // Automatically switch to ER Diagram tab upon login
+  const wasConnected = useRef(db.isConnected)
+  useEffect(() => {
+    if (db.isConnected && !wasConnected.current) {
+      setActiveTab('er')
+    }
+    wasConnected.current = db.isConnected
+  }, [db.isConnected])
 
   // Modal state
   const [modal, setModal] = useState(null)
@@ -194,19 +204,36 @@ export default function App() {
     setModal({ type: 'modifyColumn', colName, table: tableContext || selectedTableInfo, colInfo })
   }, [selectedTableInfo])
 
-  const handleModifyColumnSubmit = useCallback(({ new_data_type, new_nullable, is_primary, is_unique, is_autoincrement }) => {
+  const handleModifyColumnSubmit = useCallback(async ({ new_name, new_data_type, new_nullable, is_primary, is_unique, is_autoincrement }) => {
     if (!modal?.colName || !modal?.table) return
-    db.modifyColumn({
-      table: modal.table.name,
-      schemaName: modal.table.schema_name || 'public',
-      columnName: modal.colName,
-      newDataType: new_data_type,
-      newNullable: new_nullable,
-      isPrimary: is_primary,
-      isUnique: is_unique,
-      isAutoincrement: is_autoincrement,
-    })
-    closeModal()
+    
+    const table = modal.table.name
+    const schemaName = modal.table.schema_name || 'public'
+    const oldName = modal.colName
+    let activeName = oldName
+
+    try {
+      // 1. Rename if needed
+      if (new_name && new_name !== oldName) {
+        await db.renameColumnAsync({ table, schemaName, columnName: oldName, newName: new_name })
+        activeName = new_name
+      }
+
+      // 2. Modify properties
+      await db.modifyColumnAsync({
+        table,
+        schemaName,
+        columnName: activeName,
+        newDataType: new_data_type,
+        newNullable: new_nullable,
+        isPrimary: is_primary,
+        isUnique: is_unique,
+        isAutoincrement: is_autoincrement,
+      })
+      closeModal()
+    } catch {
+      // Mutations already log errors
+    }
   }, [db, modal, closeModal])
 
   // Drop Column (from DataTable or ER Diagram)
@@ -293,6 +320,25 @@ export default function App() {
     })
   }, [db, closeModal])
 
+  // ---------- apiHandlers (Must be before conditional return) ----------
+  const apiHandlers = useMemo(() => ({
+    dropTable: db.dropTableAsync,
+    addColumn: db.addColumnAsync, 
+    modifyColumn: db.modifyColumnAsync,
+    dropColumn: db.dropColumnAsync,
+    createForeignKey: db.createForeignKeyAsync,
+    dropForeignKey: db.dropForeignKeyAsync,
+    createRelationship: handleCreateRelationship,
+    onDropRelationship: handleDropRelationship,
+    fetchNodePositions: getNodePositions,
+    saveNodePositions: saveNodePositions,
+    connectionInfo: connectionInfo
+  }), [
+    db.dropTableAsync, db.addColumnAsync, db.modifyColumnAsync, 
+    db.dropColumnAsync, db.createForeignKeyAsync, db.dropForeignKeyAsync,
+    handleCreateRelationship, handleDropRelationship, connectionInfo
+  ])
+
   // ---------- Not connected → login ----------
   if (!db.isConnected) {
     return (
@@ -352,21 +398,9 @@ export default function App() {
             onRenameTable={handleRenameTable}
             onAddColumn={handleAddColumn}
             onModifyColumn={handleModifyColumn}
-            // Stabilized API handlers
-            apiHandlers={useMemo(() => ({
-                dropTable: db.dropTableAsync,
-                addColumn: db.addColumnAsync, 
-                modifyColumn: db.modifyColumnAsync,
-                dropColumn: db.dropColumnAsync,
-                createForeignKey: db.createForeignKeyAsync,
-                dropForeignKey: db.dropForeignKeyAsync,
-                createRelationship: handleCreateRelationship,
-                onDropRelationship: handleDropRelationship
-            }), [
-              db.dropTableAsync, db.addColumnAsync, db.modifyColumnAsync, 
-              db.dropColumnAsync, db.createForeignKeyAsync, db.dropForeignKeyAsync,
-              handleCreateRelationship, handleDropRelationship
-            ])}
+            metadata={db.metadata}
+            onSaveMetadata={db.saveTableMetadata}
+            apiHandlers={apiHandlers}
           />
         </div>
 
@@ -381,6 +415,7 @@ export default function App() {
               db.executeQuery({ sql })
             }, [db.executeQuery])}
             loadedSnippet={loadedSnippet?.type === 'visual' ? loadedSnippet : null}
+            dbType={db.connectionInfo?.db_type}
           />
         </div>
 
@@ -401,6 +436,8 @@ export default function App() {
             onEditTable={handleEditTableRequested}
             isImporting={db.isImporting}
             foreignKeys={db.schema?.foreign_keys}
+            metadata={db.metadata}
+            onSaveMetadata={db.saveTableMetadata}
           />
         </div>
 

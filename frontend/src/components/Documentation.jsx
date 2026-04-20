@@ -13,7 +13,7 @@ import {
   ExternalLink, Hash
 } from 'lucide-react'
 import { generateSchemaMarkdown } from '../utils/docGenerator'
-import { getDocuments, saveDocument, updateDocument, deleteDocument } from '../lib/docs'
+import { getDocuments, saveDocument, updateDocument, deleteDocument } from '../lib/snippets'
 
 // Initialize Mermaid with larger base rendering to prevent "too small" look
 mermaid.initialize({

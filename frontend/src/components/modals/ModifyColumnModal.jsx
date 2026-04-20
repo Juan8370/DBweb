@@ -12,6 +12,7 @@ const DATA_TYPES = [
 
 export default function ModifyColumnModal({ tableName, columnName, currentType, currentNullable, colInfo, onSubmit, onCancel, isLoading }) {
   const [form, setForm] = useState({
+    new_name: columnName || '',
     new_data_type: currentType || 'VARCHAR(255)',
     new_nullable: currentNullable ?? true,
     is_primary: !!colInfo?.is_primary,
@@ -22,6 +23,7 @@ export default function ModifyColumnModal({ tableName, columnName, currentType, 
   const handleSubmit = (e) => {
     e.preventDefault()
     onSubmit({
+      new_name: form.new_name,
       new_data_type: form.new_data_type,
       new_nullable: form.new_nullable,
       is_primary: form.is_primary,
@@ -44,6 +46,15 @@ export default function ModifyColumnModal({ tableName, columnName, currentType, 
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body space-y-3">
+            <div>
+              <label className="input-label">Column Name</label>
+              <input 
+                className="input" 
+                value={form.new_name} 
+                onChange={(e) => setForm((f) => ({ ...f, new_name: e.target.value }))}
+                placeholder="Enter new column name..."
+              />
+            </div>
             <div>
               <label className="input-label">New Data Type</label>
               <select

@@ -10,6 +10,8 @@ import * as api from '../lib/api'
 const COOKIE_KEY = 'dbweb_session'
 const CREDS_KEY  = 'dbweb_creds'
 
+import { getTableMetadata, saveTableMetadata } from '../lib/snippets'
+
 export function useDatabase() {
   const queryClient = useQueryClient()
   const [sessionId, setSessionId] = useState(() => Cookies.get(COOKIE_KEY) || null)
@@ -109,6 +111,21 @@ export function useDatabase() {
     onError: (err) => {
       addLog('error', `Query error: ${err.message}`)
     },
+  })
+
+  // ----- Table Metadata -----
+  const metadataQuery = useQuery({
+    queryKey: ['table-metadata', sessionId],
+    queryFn: () => getTableMetadata(JSON.parse(Cookies.get(CREDS_KEY) || '{}')),
+    enabled: !!sessionId,
+    staleTime: 300_000,
+  })
+
+  const saveMetadataMutation = useMutation({
+    mutationFn: ({ tableName, isIndex }) => saveTableMetadata(tableName, isIndex, JSON.parse(Cookies.get(CREDS_KEY) || '{}')),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['table-metadata'] })
+    }
   })
 
   // ----- Table data -----
@@ -273,6 +290,8 @@ export function useDatabase() {
     schema: schemaQuery.data ?? null,
     isSchemaLoading: schemaQuery.isLoading,
     refetchSchema: schemaQuery.refetch,
+    metadata: metadataQuery.data ?? [],
+    isMetadataLoading: metadataQuery.isLoading,
 
     // Actions
     connect: connectMutation.mutate,
@@ -283,6 +302,8 @@ export function useDatabase() {
     queryResult: executeQueryMutation.data ?? null,
     queryError: executeQueryMutation.error,
     fetchTable,
+    saveTableMetadata: saveMetadataMutation.mutate,
+    saveTableMetadataAsync: saveMetadataMutation.mutateAsync,
 
     // DDL
     createTable: createTableMutation.mutate,
@@ -322,5 +343,6 @@ export function useDatabase() {
     logs,
     addLog,
     clearLogs: () => setLogs([]),
+    connectionInfo: savedCreds,
   }
 }

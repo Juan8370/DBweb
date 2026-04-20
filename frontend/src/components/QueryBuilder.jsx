@@ -24,10 +24,11 @@ const nodeTypes = { queryNode: QueryNode }
 const edgeTypes = { joinEdge: JoinEdge }
 
 // Main Query Builder Component - Handles Visual SQL Generation
-const QueryBuilderInner = memo(({ schema, onExecuteQuery, isExecuting, result, error, loadedSnippet }) => {
+const QueryBuilderInner = memo(({ schema, onExecuteQuery, isExecuting, result, error, loadedSnippet, dbType }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const [filters, setFilters] = useState([]) // { id, tableInstanceId, column, operator, value }
+  const [limit, setLimit] = useState(100)
   const [isSaving, setIsSaving] = useState(false)
   const [snippetName, setSnippetName] = useState('')
   const [bottomHeight, setBottomHeight] = useState(300)
@@ -323,8 +324,13 @@ const QueryBuilderInner = memo(({ schema, onExecuteQuery, isExecuting, result, e
     let sql = `SELECT ${selectClause}\nFROM `
     sql += fromEntries.map(e => e.base + (e.joins.length > 0 ? '\n' + e.joins.join('\n') : '')).join(',\n')
     
-    return sql + whereClause + ';'
-  }, [nodes, edges, filters])
+    // Add Query Limit
+    const limitSql = dbType === 'mssql' || dbType === 'sqlserver'
+        ? `\nORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT ${limit} ROWS ONLY`
+        : `\nLIMIT ${limit}`
+
+    return sql + whereClause + limitSql + ';'
+  }, [nodes, edges, filters, limit, dbType])
 
   const handleCopy = () => {
     navigator.clipboard.writeText(generatedSQL).then(() => {
@@ -580,6 +586,20 @@ const QueryBuilderInner = memo(({ schema, onExecuteQuery, isExecuting, result, e
                   {isExecuting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
                   Run Studio Preview
                </button>
+
+               {/* Limit Selector */}
+               <div className="flex items-center gap-2 bg-surface-900 border border-surface-700/60 rounded-full px-3 py-1.5 shadow-xl ml-1">
+                  <Settings className="w-3.5 h-3.5 text-surface-500" />
+                  <select 
+                   className="bg-transparent border-none outline-none text-[10px] font-bold text-surface-400 capitalize cursor-pointer focus:text-indigo-400 transition-colors"
+                   value={limit}
+                   onChange={(e) => setLimit(Number(e.target.value))}
+                  >
+                    {[10, 50, 100, 500, 1000, 5000].map(val => (
+                      <option key={val} value={val} className="bg-surface-900 border-none">Limit: {val}</option>
+                    ))}
+                  </select>
+               </div>
             </div>
          </div>
       </div>

@@ -38,7 +38,8 @@ import {
   View,
   Eye,
   EyeOff,
-  CheckCircle2
+  CheckCircle2,
+  Bookmark
 } from 'lucide-react'
 import * as api from '../lib/api'
 import ContextMenu from './ContextMenu'
@@ -56,6 +57,8 @@ export default memo(function DataTable({
   onBulkInsert,
   onEditTable,
   isImporting,
+  metadata = [],
+  onSaveMetadata,
 }) {
   const queryClient = useQueryClient()
   const [sorting, setSorting] = useState([])
@@ -429,6 +432,23 @@ export default memo(function DataTable({
             </div>
 
             <button className="btn-primary !bg-surface-800 !border-surface-700 hover:!bg-surface-700 !px-4 !py-2 text-[10px] font-black uppercase tracking-[0.1em] flex items-center gap-2 group transition-all" onClick={() => onEditTable?.(tableName)}><Settings className="w-3.5 h-3.5 text-surface-500 group-hover:rotate-90 transition-transform duration-500" /><span>Edit Table</span></button>
+            <div className="h-6 w-px bg-surface-800 mx-1" />
+            
+            {/* Mark as Index Toggle */}
+            {tableName && (
+              <button 
+                className={`btn-primary !px-4 !py-2 text-[10px] font-black uppercase tracking-[0.1em] flex items-center gap-2 group transition-all
+                  ${metadata.find(m => m.table_name === tableName)?.is_index 
+                    ? '!bg-indigo-600 !border-indigo-400 text-white shadow-[0_0_15px_rgba(79,70,229,0.4)]' 
+                    : '!bg-surface-800 !border-surface-700 text-surface-400 hover:text-surface-200'}`}
+                onClick={() => onSaveMetadata?.({ tableName, isIndex: !metadata.find(m => m.table_name === tableName)?.is_index })}
+                title="Mark this table as an Index / Reference table"
+              >
+                <Bookmark className={`w-3.5 h-3.5 ${metadata.find(m => m.table_name === tableName)?.is_index ? 'fill-white' : ''}`} />
+                <span>Index</span>
+              </button>
+            )}
+            
             <div className="h-6 w-px bg-surface-800 mx-1" />
             <button className={`btn-ghost !px-3 !py-1 text-[9px] font-bold uppercase tracking-widest border border-surface-800 rounded-lg transition-all ${caseSensitive ? 'text-primary-400 bg-primary-500/10 border-primary-500/30' : 'text-surface-600'}`} onClick={() => setCaseSensitive(!caseSensitive)}>Aa</button>
             {(Object.values(filterDraft).some(v => v !== '') || hasFilters) && <button className="btn-primary !bg-emerald-600 hover:!bg-emerald-500 !px-4 !py-1.5 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-lg" onClick={handleApplyFilters}><Filter className="w-3.5 h-3.5" /> Apply</button>}

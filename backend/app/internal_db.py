@@ -1,6 +1,6 @@
 import datetime
 import uuid
-from sqlalchemy import create_engine, Column, String, Text, DateTime, inspect, text
+from sqlalchemy import create_engine, Column, String, Text, DateTime, Boolean, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -52,12 +52,26 @@ class NodePosition(Base):
     host = Column(String, index=True, nullable=True)
     db_name = Column(String, index=True, nullable=True)
 
+class TableMetadata(Base):
+    __tablename__ = "table_metadata"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    table_name = Column(String, index=True)
+    is_index = Column(Boolean, default=False)
+    db_type = Column(String, index=True, nullable=True)
+    host = Column(String, index=True, nullable=True)
+    db_name = Column(String, index=True, nullable=True)
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     
     # Manual migration for existing databases (Alembic might be overkill for this simple SQLite app)
     with engine.connect() as conn:
         inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        
+        if 'table_metadata' not in tables:
+            Base.metadata.tables['table_metadata'].create(bind=engine)
         
         # Add columns to 'snippets' if missing
         snippet_cols = [c['name'] for c in inspector.get_columns('snippets')]

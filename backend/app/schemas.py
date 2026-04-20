@@ -80,6 +80,7 @@ class QueryRequest(BaseModel):
     session_id: str
     sql: str = Field(..., min_length=1)
     params: Optional[Dict[str, Any]] = None
+    allow_destructive: bool = False
 
 
 class QueryResponse(BaseModel):
@@ -113,6 +114,7 @@ class CellUpdateRequest(BaseModel):
     primary_key_value: Any
     column: str
     value: Any
+    allow_destructive: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -289,6 +291,23 @@ class NodePositionSchema(BaseModel):
 
 class SaveNodePositionsRequest(BaseModel):
     positions: List[NodePositionSchema]
+    db_type: Optional[str] = None
+    host: Optional[str] = None
+    db_name: Optional[str] = None
+
+class TableMetadataSchema(BaseModel):
+    table_name: str
+    is_index: bool
+    db_type: Optional[str] = None
+    host: Optional[str] = None
+    db_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class SaveTableMetadataRequest(BaseModel):
+    table_name: str
+    is_index: bool
     db_type: Optional[str] = None
     host: Optional[str] = None
     db_name: Optional[str] = None
