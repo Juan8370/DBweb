@@ -1,0 +1,14 @@
+node_modules
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.db
+dbweb_internal.db
+dist
+build
+.git
+.gitignore
+.env
+volumes
